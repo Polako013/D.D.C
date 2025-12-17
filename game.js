@@ -1,293 +1,234 @@
-const config = {
-  type: Phaser.AUTO,
-  width: 800,
-  height: 600,
-  backgroundColor: '#0b1020',
-  scene: { create, update }
+// ===== CANVAS =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = 400;
+canvas.height = 600;
+
+// ===== FIREBASE =====
+const FIREBASE_URL = "https://mi-juego-ranking-default-rtdb.firebaseio.com/scores/-Ogi-bC6F8HV_K9JRv-D/scores.json";
+
+// ===== GUARDADO =====
+let level = Number(localStorage.getItem("level")) || 1;
+let score = Number(localStorage.getItem("score")) || 0;
+
+// ===== JUGADOR =====
+const player = {
+  x: 200,
+  y: 520,
+  lives: 3,
+  speed: 5
 };
 
-new Phaser.Game(config);
-
+let bullets = [];
+let enemies = [];
+let boss = null;
+let bossBullets = [];
 let gameOver = false;
-let bossActive = false;
+let rankingData = [];
+let showRanking = false;
 
-function create() {
-  // ===== CARGAR GUARDADO =====
-  const save = JSON.parse(localStorage.getItem('saveGame'));
+// ===== CONTROLES =====
+const keys = {};
+document.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if (e.key === " ") shoot();
+});
+document.addEventListener("keyup", e => keys[e.key] = false);
 
-  this.level = save?.level || 1;
-  this.lives = save?.lives || 3;
-  this.score = save?.score || 0;
-  this.spawned = 0;
-
-  this.highScore = parseInt(localStorage.getItem('highScore')) || 0;
-
-  // ===== GRÁFICOS =====
-  const g = this.make.graphics({ x: 0, y: 0, add: false });
-
-  g.fillStyle(0x00ffd0);
-  g.fillTriangle(20, 0, 0, 40, 40, 40);
-  g.generateTexture('player', 40, 40);
-  g.clear();
-
-  g.fillStyle(0xff5555);
-  g.fillRoundedRect(0, 0, 30, 30, 6);
-  g.generateTexture('enemy', 30, 30);
-  g.clear();
-
-  g.fillStyle(0xaa44ff);
-  g.fillRoundedRect(0, 0, 150, 80, 16);
-  g.generateTexture('boss', 150, 80);
-  g.clear();
-
-  g.fillStyle(0xffff00);
-  g.fillRect(0, 0, 6, 12);
-  g.generateTexture('bullet', 6, 12);
-  g.clear();
-
-  g.fillStyle(0xffaa00);
-  g.fillRect(0, 0, 10, 16);
-  g.generateTexture('bossBullet', 10, 16);
-  g.destroy();
-
-  // ===== JUGADOR =====
-  this.player = this.add.image(400, 520, 'player');
-
-  this.tweens.add({
-    targets: this.player,
-    y: 510,
-    duration: 800,
-    yoyo: true,
-    repeat: -1
-  });
-
-  // ===== INPUT =====
-  this.cursors = this.input.keyboard.createCursorKeys();
-  this.space = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-  this.rKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
-
-  // ===== ARRAYS =====
-  this.bullets = [];
-  this.enemies = [];
-  this.bossBullets = [];
-
-  // ===== NIVELES =====
-  this.levelData = [
-    { enemies: 6, speed: 2 },
-    { enemies: 9, speed: 3 }
-  ];
-
-  // ===== BOSS =====
-  this.boss = null;
-  this.bossLifeMax = 40;
-  this.bossLife = 40;
-
-  // ===== UI =====
-  this.livesText = this.add.text(10, 10, 'Vidas: ' + this.lives, { fill: '#fff' });
-  this.scoreText = this.add.text(10, 30, 'Puntos: ' + this.score, { fill: '#fff' });
-  this.levelText = this.add.text(10, 50, 'Nivel: ' + this.level, { fill: '#fff' });
-  this.recordText = this.add.text(10, 70, 'Récord: ' + this.highScore, { fill: '#fff' });
-
-  this.endText = this.add.text(230, 260, '', {
-    fontSize: '32px',
-    fill: '#fff'
-  }).setVisible(false);
-
-  this.restartText = this.add.text(220, 310, 'R = Reiniciar', {
-    fill: '#fff'
-  }).setVisible(false);
-
-  // ===== TIMERS =====
-  this.enemyTimer = this.time.addEvent({
-    delay: 900,
-    loop: true,
-    callback: () => spawnEnemy.call(this)
-  });
-
-  this.bossShootTimer = this.time.addEvent({
-    delay: 700,
-    loop: true,
-    paused: true,
-    callback: () => bossShoot.call(this)
-  });
-
-  this.time.addEvent({
-    delay: 3000,
-    loop: true,
-    callback: () => saveGame.call(this)
-  });
+// ===== DISPARO =====
+function shoot() {
+  bullets.push({ x: player.x, y: player.y });
 }
 
-function saveGame() {
-  if (gameOver) return;
-  localStorage.setItem('saveGame', JSON.stringify({
-    level: this.level,
-    lives: this.lives,
-    score: this.score
-  }));
+// ===== COLISIÓN SIMPLE =====
+function hit(a, b, size = 20) {
+  return Math.abs(a.x - b.x) < size && Math.abs(a.y - b.y) < size;
 }
 
+// ===== ENEMIGOS =====
 function spawnEnemy() {
-  if (gameOver || bossActive) return;
-  const data = this.levelData[this.level - 1];
-  if (!data || this.spawned >= data.enemies) return;
-
-  const e = this.add.image(
-    Phaser.Math.Between(40, 760),
-    -30,
-    'enemy'
-  );
-
-  this.enemies.push(e);
-  this.spawned++;
-}
-
-function spawnBoss() {
-  bossActive = true;
-  this.boss = this.add.image(400, -100, 'boss');
-  this.bossShootTimer.paused = false;
-
-  this.tweens.add({
-    targets: this.boss,
-    scale: 1.05,
-    duration: 600,
-    yoyo: true,
-    repeat: -1
+  enemies.push({
+    x: Math.random() * 360 + 20,
+    y: -20,
+    speed: 2 + level * 0.3
   });
 }
 
-function bossShoot() {
-  if (!bossActive || !this.boss || gameOver) return;
-  const b = this.add.image(this.boss.x, this.boss.y + 50, 'bossBullet');
-  this.bossBullets.push(b);
+// ===== BOSS =====
+function spawnBoss() {
+  boss = {
+    x: 200,
+    y: 80,
+    life: 40 + level * 10,
+    dir: 1,
+    shootTimer: 0
+  };
 }
 
-function update() {
-  if (gameOver) {
-    if (Phaser.Input.Keyboard.JustDown(this.rKey)) {
-      localStorage.removeItem('saveGame');
-      location.reload();
-    }
-    return;
-  }
-
-  // MOVIMIENTO
-  if (this.cursors.left.isDown) this.player.x -= 5;
-  if (this.cursors.right.isDown) this.player.x += 5;
-
-  // DISPARAR
-  if (Phaser.Input.Keyboard.JustDown(this.space)) {
-    const b = this.add.image(this.player.x, this.player.y - 20, 'bullet');
-    this.bullets.push(b);
-  }
-
-  // BALAS
-  for (let i = this.bullets.length - 1; i >= 0; i--) {
-    this.bullets[i].y -= 8;
-    if (this.bullets[i].y < 0) {
-      this.bullets[i].destroy();
-      this.bullets.splice(i, 1);
-    }
-  }
-
-  // ENEMIGOS
-  if (!bossActive) {
-    const data = this.levelData[this.level - 1];
-
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      this.enemies[i].y += data.speed;
-
-      if (this.enemies[i].y > 620) {
-        this.enemies[i].destroy();
-        this.enemies.splice(i, 1);
-        this.lives--;
-        this.livesText.setText('Vidas: ' + this.lives);
-        if (this.lives <= 0) endGame.call(this, false);
-      }
-    }
-
-    if (this.spawned >= data.enemies && this.enemies.length === 0) {
-      this.level++;
-      this.spawned = 0;
-      if (this.level > this.levelData.length) spawnBoss.call(this);
-      else this.levelText.setText('Nivel: ' + this.level);
-    }
-  }
-
-  // COLISIONES BALAS vs ENEMIGOS
-  for (let b = this.bullets.length - 1; b >= 0; b--) {
-    for (let e = this.enemies.length - 1; e >= 0; e--) {
-      if (Phaser.Geom.Intersects.RectangleToRectangle(
-        this.bullets[b].getBounds(),
-        this.enemies[e].getBounds()
-      )) {
-        this.bullets[b].destroy();
-        this.enemies[e].destroy();
-        this.bullets.splice(b, 1);
-        this.enemies.splice(e, 1);
-        this.score += 10;
-        this.scoreText.setText('Puntos: ' + this.score);
-        break;
-      }
-    }
-  }
-
-  // BOSS
-  if (bossActive && this.boss) {
-    if (this.boss.y < 120) this.boss.y += 2;
-    this.boss.x += Math.sin(this.time.now / 400) * 2;
-
-    for (let b = this.bullets.length - 1; b >= 0; b--) {
-      if (Phaser.Geom.Intersects.RectangleToRectangle(
-        this.bullets[b].getBounds(),
-        this.boss.getBounds()
-      )) {
-        this.bullets[b].destroy();
-        this.bullets.splice(b, 1);
-        this.bossLife--;
-      }
-    }
-
-    if (this.bossLife <= 0) endGame.call(this, true);
-  }
-
-  // BALAS BOSS
-  for (let i = this.bossBullets.length - 1; i >= 0; i--) {
-    this.bossBullets[i].y += 5;
-    if (Phaser.Geom.Intersects.RectangleToRectangle(
-      this.bossBullets[i].getBounds(),
-      this.player.getBounds()
-    )) {
-      this.bossBullets[i].destroy();
-      this.bossBullets.splice(i, 1);
-      this.lives--;
-      this.livesText.setText('Vidas: ' + this.lives);
-      if (this.lives <= 0) endGame.call(this, false);
-    }
-  }
-}
-
-function endGame(win) {const nombre = prompt("Tu nombre para el ranking:");
-if (nombre) enviarPuntuacion(nombre, this.score);
-
-  gameOver = true;
-  localStorage.removeItem('saveGame');
-
-  if (this.score > this.highScore) {
-    localStorage.setItem('highScore', this.score);
-  }
-
-  this.endText.setText(win ? '¡BOSS DERROTADO!' : 'GAME OVER').setVisible(true);
-  this.restartText.setVisible(true);
-}
-const FIREBASE_URL = "https://mi-juego-ranking-default-rtdb.firebaseio.com/scores.json";
-
+// ===== FIREBASE =====
 function enviarPuntuacion(nombre, puntos) {
   fetch(FIREBASE_URL, {
     method: "POST",
-    body: JSON.stringify({
-      name: nombre,
-      score: puntos
-    })
+    body: JSON.stringify({ name: nombre, score: puntos })
   });
 }
+
+function cargarRanking() {
+  fetch(FIREBASE_URL)
+    .then(r => r.json())
+    .then(data => {
+      if (!data) return;
+      rankingData = Object.values(data)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+      showRanking = true;
+    });
+}
+
+// ===== FIN =====
+function endGame() {
+  gameOver = true;
+  localStorage.clear();
+
+  const nombre = prompt("Tu nombre para el ranking:");
+  if (nombre) enviarPuntuacion(nombre, score);
+  cargarRanking();
+}
+
+// ===== UPDATE =====
+function update() {
+  if (gameOver) return;
+
+  // mover jugador
+  if (keys["ArrowLeft"] && player.x > 20) player.x -= player.speed;
+  if (keys["ArrowRight"] && player.x < 380) player.x += player.speed;
+
+  // balas jugador
+  bullets.forEach(b => b.y -= 7);
+  bullets = bullets.filter(b => b.y > 0);
+
+  // enemigos
+  if (!boss && Math.random() < 0.02) spawnEnemy();
+  enemies.forEach(e => e.y += e.speed);
+
+  enemies.forEach((e, ei) => {
+    bullets.forEach((b, bi) => {
+      if (hit(e, b)) {
+        enemies.splice(ei, 1);
+        bullets.splice(bi, 1);
+        score += 10;
+      }
+    });
+
+    if (e.y > 600 || hit(e, player)) {
+      enemies.splice(ei, 1);
+      player.lives--;
+      if (player.lives <= 0) endGame();
+    }
+  });
+
+  // boss aparece cada 3 niveles
+  if (level % 3 === 0 && !boss) spawnBoss();
+
+  if (boss) {
+    boss.x += boss.dir * 2;
+    if (boss.x < 40 || boss.x > 360) boss.dir *= -1;
+
+    // boss dispara
+    boss.shootTimer++;
+    if (boss.shootTimer > 40) {
+      bossBullets.push({ x: boss.x, y: boss.y });
+      boss.shootTimer = 0;
+    }
+
+    bossBullets.forEach(b => b.y += 4);
+    bossBullets = bossBullets.filter(b => b.y < 600);
+
+    bossBullets.forEach((b, bi) => {
+      if (hit(b, player)) {
+        bossBullets.splice(bi, 1);
+        player.lives--;
+        if (player.lives <= 0) endGame();
+      }
+    });
+
+    bullets.forEach((b, bi) => {
+      if (hit(boss, b, 30)) {
+        bullets.splice(bi, 1);
+        boss.life--;
+        score += 5;
+        if (boss.life <= 0) {
+          boss = null;
+          level++;
+          saveGame();
+        }
+      }
+    });
+  }
+
+  if (score > level * 200 && !boss) {
+    level++;
+    saveGame();
+  }
+}
+
+// ===== GUARDAR =====
+function saveGame() {
+  localStorage.setItem("level", level);
+  localStorage.setItem("score", score);
+}
+
+// ===== DIBUJO =====
+function draw() {
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0, 0, 400, 600);
+
+  ctx.font = "24px Arial";
+
+  // jugador 🚀
+  ctx.fillText("🚀", player.x - 12, player.y + 12);
+
+  // balas 🔹
+  bullets.forEach(b => ctx.fillText("🔹", b.x - 5, b.y));
+
+  // enemigos 👾
+  enemies.forEach(e => ctx.fillText("👾", e.x - 12, e.y + 12));
+
+  // boss 👑
+  if (boss) {
+    ctx.font = "40px Arial";
+    ctx.fillText("👑", boss.x - 20, boss.y + 20);
+    ctx.font = "16px Arial";
+    ctx.fillText("BOSS VIDA: " + boss.life, 140, 30);
+  }
+
+  // balas boss 🔥
+  bossBullets.forEach(b => ctx.fillText("🔥", b.x - 8, b.y + 8));
+
+  // HUD
+  ctx.font = "16px Arial";
+  ctx.fillStyle = "white";
+  ctx.fillText("Puntos: " + score, 10, 20);
+  ctx.fillText("Vidas: " + player.lives, 320, 20);
+  ctx.fillText("Nivel: " + level, 180, 20);
+
+  // ranking bonito
+  if (showRanking) {
+    ctx.fillStyle = "rgba(0,0,0,0.8)";
+    ctx.fillRect(50, 150, 300, 300);
+    ctx.fillStyle = "white";
+    ctx.fillText("🏆 RANKING 🏆", 140, 180);
+    rankingData.forEach((p, i) => {
+      ctx.fillText(`${i + 1}. ${p.name} - ${p.score}`, 90, 220 + i * 30);
+    });
+  }
+}
+
+// ===== LOOP =====
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
