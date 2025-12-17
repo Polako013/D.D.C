@@ -2,16 +2,27 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Mi juego</title>
+  <title>Mi Juego</title>
   <style>
-    body { margin: 0; background: black; }
-    canvas { display: block; margin: auto; }
+    body {
+      margin: 0;
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    canvas {
+      border: 2px solid white;
+      background: #111;
+    }
   </style>
 </head>
 <body>
 
-<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
-<script src="game.js"></script>
+  <canvas id="game" width="400" height="600"></canvas>
 
+  <script src="game.js"></script>
 </body>
 </html>
