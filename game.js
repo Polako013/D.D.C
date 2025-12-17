@@ -267,7 +267,9 @@ function update() {
   }
 }
 
-function endGame(win) {
+function endGame(win) {const nombre = prompt("Tu nombre para el ranking:");
+if (nombre) enviarPuntuacion(nombre, this.score);
+
   gameOver = true;
   localStorage.removeItem('saveGame');
 
@@ -277,4 +279,15 @@ function endGame(win) {
 
   this.endText.setText(win ? '¡BOSS DERROTADO!' : 'GAME OVER').setVisible(true);
   this.restartText.setVisible(true);
+}
+const FIREBASE_URL = "https://mi-juego-ranking-default-rtdb.firebaseio.com/scores.json";
+
+function enviarPuntuacion(nombre, puntos) {
+  fetch(FIREBASE_URL, {
+    method: "POST",
+    body: JSON.stringify({
+      name: nombre,
+      score: puntos
+    })
+  });
 }
